@@ -1,6 +1,5 @@
 import cors from "cors";
 import express from "express";
-import helmet from "helmet";
 import { createClient } from "@supabase/supabase-js";
 
 type LeadPayload = {
@@ -29,7 +28,13 @@ const supabase = supabaseUrl && serviceRoleKey
   ? createClient(supabaseUrl, serviceRoleKey, { auth: { persistSession: false } })
   : null;
 
-app.use(helmet());
+app.use((_request, response, next) => {
+  response.setHeader("X-Content-Type-Options", "nosniff");
+  response.setHeader("X-Frame-Options", "DENY");
+  response.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
+  response.setHeader("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
+  next();
+});
 app.use(express.json({ limit: "1mb" }));
 app.use(cors({ origin: allowedOrigin === "*" ? true : allowedOrigin.split(",").map((item) => item.trim()) }));
 
