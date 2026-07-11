@@ -9,29 +9,30 @@ export default {
   async fetch(request: Request) {
     if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: securityHeaders() });
     const url = new URL(request.url);
+    const routePath = resolveRoutePath(url);
 
     try {
-      if (request.method === "GET" && url.pathname === "/health") {
+      if (request.method === "GET" && ["/health", "/api/health"].includes(routePath)) {
         const health = await getHealth();
         return json(health, health.ok ? 200 : 503);
       }
 
-      if (request.method === "POST" && url.pathname === "/api/leads") {
+      if (request.method === "POST" && routePath === "/api/leads") {
         const result = await registerLead(await request.json() as LeadPayload);
         return json({ ok: true, ...result }, 201);
       }
 
-      if (request.method === "GET" && url.pathname === "/webhooks/whatsapp") {
+      if (request.method === "GET" && routePath === "/webhooks/whatsapp") {
         return new Response(verifyWebhookChallenge(url.searchParams), { status: 200, headers: { ...securityHeaders(), "Content-Type": "text/plain; charset=utf-8" } });
       }
 
-      if (request.method === "POST" && url.pathname === "/webhooks/whatsapp") {
+      if (request.method === "POST" && routePath === "/webhooks/whatsapp") {
         const rawBody = Buffer.from(await request.arrayBuffer());
         const result = await processWhatsAppWebhook(rawBody, request.headers.get("x-hub-signature-256") || undefined);
         return json({ ok: true, ...result }, 200);
       }
 
-      if (["GET", "POST"].includes(request.method) && url.pathname === "/api/internal/notifications/process") {
+      if (["GET", "POST"].includes(request.method) && routePath === "/api/internal/notifications/process") {
         requireWorkerAuthorization(request.headers.get("authorization") || undefined);
         const defaultLimit = request.method === "GET" ? 100 : 20;
         const result = await processOutboxBatch(Number(url.searchParams.get("limit") || defaultLimit));
@@ -43,11 +44,17 @@ export default {
       const status = error instanceof ApiError ? error.status : 500;
       const code = error instanceof ApiError ? error.code : "INTERNAL_ERROR";
       const message = error instanceof Error ? error.message : "Error inesperado.";
-      if (status >= 500) console.error(JSON.stringify({ level: "error", event: "api.request_failed", code, message, route: url.pathname }));
+      if (status >= 500) console.error(JSON.stringify({ level: "error", event: "api.request_failed", code, message, route: routePath }));
       return json({ error: message, code }, status);
     }
   }
 };
+
+function resolveRoutePath(url: URL) {
+  const rewrittenPath = url.searchParams.get("simi_path");
+  if (!rewrittenPath) return url.pathname;
+  return `/${rewrittenPath.replace(/^\/+/, "")}`;
+}
 
 function requireWorkerAuthorization(authorization?: string) {
   const workerToken = getConfig().workerToken;
