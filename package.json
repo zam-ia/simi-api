@@ -5,8 +5,11 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch src/server.ts",
+    "dev:worker": "tsx watch src/workers/notification.worker.ts",
     "build": "tsc",
-    "start": "node dist/server.js"
+    "start": "node dist/src/server.js",
+    "worker": "node dist/src/workers/notification.worker.js",
+    "test": "tsx --test src/**/*.test.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.4",
