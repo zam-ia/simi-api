@@ -18,9 +18,32 @@ export type WorkerBatchResult = {
 export async function processOutboxBatch(limit = 20): Promise<WorkerBatchResult> {
   const startedAt = Date.now();
   const config = getConfig();
-  if (!hasWhatsAppConfig(config)) throw new ApiError("WhatsApp Cloud API no está configurada.", 503, "WHATSAPP_NOT_CONFIGURED");
-
   const supabase = getSupabaseAdmin();
+
+  if (!hasWhatsAppConfig(config)) {
+    const { count, error: pendingError } = await supabase
+      .from("notification_outbox")
+      .select("id", { count: "exact", head: true })
+      .in("status", ["pending", "retry"]);
+
+    if (pendingError) throw new ApiError("No se pudo revisar la cola de notificaciones.", 500, "OUTBOX_HEALTH_FAILED");
+    if ((count || 0) === 0) {
+      const emptyResult: WorkerBatchResult = {
+        claimed: 0,
+        sent: 0,
+        retried: 0,
+        failed: 0,
+        dead: 0,
+        durationMs: Date.now() - startedAt
+      };
+      await recordWorkerHeartbeat(emptyResult);
+      console.log(JSON.stringify({ level: "info", event: "whatsapp.worker_batch", worker_id: config.workerId, ...emptyResult }));
+      return emptyResult;
+    }
+
+    throw new ApiError("WhatsApp Cloud API no está configurada.", 503, "WHATSAPP_NOT_CONFIGURED");
+  }
+
   const { data, error } = await supabase.rpc("claim_notification_outbox", {
     p_worker_id: config.workerId,
     p_limit: Math.min(Math.max(limit, 1), 100),
